@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Vision Prescription — Prism Finder</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; font-family: -apple-system, system-ui, sans-serif; background: #101216; color: #eee; }
+    main { max-width: 640px; margin: 0 auto; padding: 24px 16px 60px; }
+    h1 { font-size: 1.5rem; }
+    .card { background: #1a1e26; border-radius: 12px; padding: 16px; margin: 14px 0; }
+    button { font-size: 1.05rem; padding: 12px 20px; border-radius: 10px; border: none; cursor: pointer; }
+    button.primary { background: #2f7fe8; color: white; font-weight: 600; }
+    button.secondary { background: #2a3140; color: #ddd; }
+    label { display: block; margin: 10px 0 4px; color: #aab; font-size: .9rem; }
+    input { font-size: 1rem; padding: 8px 10px; border-radius: 8px; border: 1px solid #333a48; background: #12151c; color: #eee; width: 100%; box-sizing: border-box; }
+    table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+    td, th { text-align: left; padding: 6px 4px; border-bottom: 1px solid #2a2f3a; }
+    .muted { color: #99a; font-size: .85rem; }
+    #latest { font-size: 1.05rem; line-height: 1.5; }
+    #latest b { color: #7fd0ff; }
+    #unsupported { color: #f6a; display: none; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Vision Prescription — Prism Finder</h1>
+    <p class="muted">Estimates the prism prescription that lets you hold <b>single vision</b>,
+      the way an eye doctor does: you look at a letter <b>H</b> and compare two views —
+      <i>“better with one… or two?”</i> — while the app brackets toward your answer. Your only
+      control: <b>squeeze the trigger (or pinch)</b> while the better-looking view is showing.
+      Keep your head <b>level</b> the whole time — the exam pauses if you tilt.</p>
+
+    <div class="card">
+      <label for="patientName">Your name (for the record)</label>
+      <input id="patientName" placeholder="e.g. Neil" />
+      <p style="margin-top:16px">
+        <button id="startBtn" class="primary">Measure my prism (VR)</button>
+      </p>
+      <p id="unsupported">This browser doesn't support WebXR VR sessions. Open this page in your
+        headset's browser (e.g. the Quest browser).</p>
+      <p class="muted">This is a screening estimate, not a medical diagnosis. Share the result
+        with your eye-care professional before using it.</p>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0">Latest suggestion</h3>
+      <div id="latest" class="muted">No measurement yet.</div>
+      <p class="muted" id="latestHint" style="display:none">Enter these numbers in the prism
+        fields on the <a href="https://haddley.github.io/vision-home/" style="color:#7fd0ff">Vision
+        Home</a> start page — they use the same convention — but only after your professional
+        approves them.</p>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0">Past measurements</h3>
+      <table id="recordsTable"><thead>
+        <tr><th>Date</th><th>Horizontal</th><th>Vertical</th><th>Notes</th></tr>
+      </thead><tbody></tbody></table>
+      <p>
+        <button id="downloadBtn">Download records (JSON)</button>
+      </p>
+      <p class="muted">Bring the downloaded file to your next appointment. Records never leave
+        this device unless you share them.</p>
+    </div>
+  </main>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
