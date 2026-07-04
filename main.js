@@ -57,6 +57,62 @@ function describeVertical(d) {
     ? `${d.toFixed(2)}Δ right eye base down / left base up`
     : `${(-d).toFixed(2)}Δ right eye base up / left base down`;
 }
+// Cyclotorsion (degrees, positive = right eye excyclodeviation) is a screening finding only:
+// no prism corrects rotation and Vision Home has no field for it, so it is never "enterable" -
+// it exists to be shown to a professional. Old records predate the field (undefined).
+function describeCyclo(d) {
+  if (d === null || d === undefined) return 'not measured';
+  if (Math.abs(d) < 0.5) return 'none detected';
+  return `${Math.abs(d).toFixed(1)}° ${d > 0 ? 'excyclo' : 'incyclo'} (right eye) — prism cannot correct this`;
+}
+
+// ---------- interpretation: educational pattern notes, NOT a diagnosis -----------------------
+// Combines the measured numbers into the kind of context a doctor would mention out loud:
+// which way the eyes tend to drift, and which combinations (vertical deviation plus same-side
+// torsion - the fourth-nerve signature) deserve prompt review. Sign conventions: h > 0 base
+// out = inward drift (esophoria); v > 0 right eye base down = right eye higher; c > 0 right
+// eye excyclotorsion. Wording must stay at "pattern consistent with / discuss with your
+// professional" - never assert a diagnosis.
+function interpretFindings(p) {
+  const notes = [];
+  const h = p.horizontalDiopters, v = p.verticalDiopters;
+  const c = p.cycloDegrees ?? null;
+  const vSig = v !== null && Math.abs(v) >= 0.25;
+  const cSig = c !== null && Math.abs(c) >= 0.5;
+
+  if (h !== null && h >= 0.25) {
+    notes.push('Needing base-out prism suggests the eyes tend to drift inward (an esophoria). ' +
+      'Small amounts are common; in adults it can go along with uncorrected farsightedness or sustained near work.');
+  } else if (h !== null && h <= -0.25) {
+    notes.push('Needing base-in prism suggests the eyes tend to drift outward (an exophoria). ' +
+      'The most common cause is convergence insufficiency, which often improves with exercises such as Brock-string training.');
+  }
+
+  if (vSig && cSig && Math.sign(v) === Math.sign(c)) {
+    const side = v > 0 ? 'right' : 'left';
+    notes.push(`A higher ${side} eye together with torsion in the matching direction is the classic pattern of a ` +
+      `superior oblique (fourth cranial nerve) weakness on the ${side} side. Long-standing cases are often congenital ` +
+      'and benign - a lifelong head tilt in old photos is a common clue - but if this is new, seek evaluation promptly.');
+  } else {
+    if (vSig) {
+      notes.push(`A vertical misalignment with the ${v > 0 ? 'right' : 'left'} eye higher. Even small vertical ` +
+        'deviations strain fusion; the most common single cause is a fourth-nerve (superior oblique) weakness.');
+    }
+    if (cSig) {
+      notes.push('Torsion without a matching vertical deviation is an unusual pattern - worth professional review.');
+    }
+  }
+
+  if ((v !== null && Math.abs(v) >= 2) || (c !== null && Math.abs(c) >= 5)) {
+    notes.push('If this misalignment is new (weeks rather than years) or arrived with other symptoms, ' +
+      'see an eye-care professional promptly - sudden-onset deviations can have neurological causes.');
+  }
+
+  if (!notes.length && (h !== null || v !== null)) {
+    notes.push('No significant misalignment pattern - nothing here suggests more than everyday variation.');
+  }
+  return notes;
+}
 
 function renderRecordsTable() {
   const tbody = document.querySelector('#recordsTable tbody');
@@ -68,6 +124,7 @@ function renderRecordsTable() {
     row.innerHTML = `<td>${date.toLocaleDateString()} ${date.toLocaleTimeString([], { timeStyle: 'short' })}</td>` +
       `<td>${describeHorizontal(p.horizontalDiopters)}</td>` +
       `<td>${describeVertical(p.verticalDiopters)}</td>` +
+      `<td>${describeCyclo(p.cycloDegrees)}</td>` +
       `<td>${record.notes.join('; ') || ''}</td>`;
     tbody.appendChild(row);
   }
@@ -77,12 +134,19 @@ function renderLatest() {
   const latest = loadRecords().at(-1);
   const el = document.getElementById('latest');
   const hint = document.getElementById('latestHint');
-  if (!latest) { el.textContent = 'No measurement yet.'; hint.style.display = 'none'; return; }
+  const interp = document.getElementById('interpretation');
+  if (!latest) { el.textContent = 'No measurement yet.'; hint.style.display = 'none'; interp.innerHTML = ''; return; }
   const p = latest.prescription;
   el.classList.remove('muted');
   el.innerHTML = `Horizontal: <b>${describeHorizontal(p.horizontalDiopters)}</b><br>` +
-    `Vertical: <b>${describeVertical(p.verticalDiopters)}</b>`;
+    `Vertical: <b>${describeVertical(p.verticalDiopters)}</b><br>` +
+    `Cyclotorsion: <b>${describeCyclo(p.cycloDegrees)}</b>`;
   hint.style.display = '';
+  const notes = interpretFindings(p);
+  interp.innerHTML = notes.length
+    ? '<b>What this can mean</b><ul>' + notes.map(n => `<li>${n}</li>`).join('') + '</ul>' +
+      'These are educational pattern notes generated from the numbers above, not a diagnosis.'
+    : '';
 }
 
 document.getElementById('downloadBtn').addEventListener('click', () => {
@@ -119,8 +183,9 @@ loadSettings();
 // after the clip's duration plus a small grace (or 8s if even metadata never loads).
 
 const speechClips = {};
-for (const id of ['welcome', 'horizontal_intro', 'vertical_intro', 'one', 'two',
-                  'level_head', 'all_done']) {
+for (const id of ['welcome', 'horizontal_intro', 'vertical_intro', 'cyclo_intro', 'one', 'two',
+                  'level_head_left', 'level_head_right', 'all_done', 'take_your_time',
+                  'no_preference_ok', 'doing_great']) {
   speechClips[id] = new Audio(`./audio/${id}.m4a`);
   speechClips[id].preload = 'auto';
 }
@@ -158,15 +223,22 @@ if (navigator.xr) {
 
 startBtn.addEventListener('click', runSession);
 
-const ROLL_LIMIT_DEG = 3;      // head roll beyond this pauses the measurement
+const ROLL_LIMIT_DEG = 3;        // head roll beyond this pauses the measurement (prism stages)
+const CYCLO_ROLL_LIMIT_DEG = 1.5; // tighter gate while measuring torsion: the lines are
+                                  // head-fixed, but ocular counter-rolling still bleeds a
+                                  // fraction of any head roll into the measured angle
 const TARGET_DISTANCE = 2.0;   // metres; comfortably near the headset's optical focal distance
-const ANSWER_WINDOW_MS = 2200; // silent time after "one"/"two" during which a select chooses it
+const ANSWER_WINDOW_MS = 2200;     // starting silent time after "one"/"two" during which a select chooses it
+const ANSWER_WINDOW_MAX_MS = 6000; // the window grows toward this when the patient needs longer looks
 
 // State shared between the routine (async), the render loop, and the select handler.
 const state = {
   selected: false,   // set by the select handler, consumed by waitForSelect
   speaking: false,   // selects during speech are ignored (don't race the prompt)
   level: true,       // maintained by the render loop from head roll; gates selects + trials
+  rollDeg: 0,        // signed head roll, updated every frame; positive = right side raised
+                     // = head tilted towards the LEFT shoulder (drives the directional nudge)
+  rollLimitDeg: ROLL_LIMIT_DEG, // tightened during the cyclotorsion stage
   prism: { h: 0, v: 0 },  // signed per-eye diopters currently applied (the candidate prism)
 };
 
@@ -225,6 +297,34 @@ async function runSession() {
   label1.position.y = label2.position.y = -0.26;
   chart.add(label1, label2);
 
+  // --- cyclotorsion targets: the dissociated double-Maddox-rod analog. Each eye sees ONE
+  // horizontal line (three.js's WebXRManager renders layer 1 to the left eye only and layer 2
+  // to the right eye only), vertically separated so both are visible at once and there is
+  // nothing to fuse. Dissociated, each line appears tilted by that eye's cyclodeviation; the
+  // staircase rotates the right eye's line until the patient says the pair looks parallel.
+  const cycloGroup = new THREE.Group();
+  chart.add(cycloGroup);
+  const lineLeft = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.5, 0.012),
+    new THREE.MeshBasicMaterial({ color: 0xff5252 }));
+  lineLeft.position.y = 0.07;
+  lineLeft.layers.set(1); // left eye only
+  const lineRight = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.5, 0.012),
+    new THREE.MeshBasicMaterial({ color: 0xffffff }));
+  lineRight.position.y = -0.07;
+  lineRight.layers.set(2); // right eye only
+  cycloGroup.add(lineLeft, lineRight);
+  cycloGroup.visible = false;
+
+  // Candidate torsion, in degrees, positive = right eye excyclodeviation. To neutralize a
+  // torsion the stimulus is rotated WITH the eye (same as turning a Maddox rod's axis); for
+  // the right eye, excyclo is clockwise from the patient's viewpoint, i.e. negative
+  // rotation.z. Rotation is about the line's own centre, like the rod in a trial frame.
+  function applyCycloCandidate(degrees) {
+    lineRight.rotation.z = -THREE.MathUtils.degToRad(degrees);
+  }
+
   chart.visible = false;
   function setChoiceLabel(which) {
     label1.visible = which === 1;
@@ -281,7 +381,8 @@ async function runSession() {
   // --- render loop: maintains the level state and bubble, applies the candidate prism.
   renderer.setAnimationLoop(() => {
     const roll = headRollDegrees();
-    state.level = Math.abs(roll) <= ROLL_LIMIT_DEG;
+    state.rollDeg = roll;
+    state.level = Math.abs(roll) <= state.rollLimitDeg;
     bubble.position.x = THREE.MathUtils.clamp(roll / 10, -1, 1) * 0.11;
     bubbleMaterial.color.setHex(state.level ? 0x2fa84f : 0xd93025);
     trackMaterial.color.setHex(state.level ? 0x334155 : 0x7a2030);
@@ -306,15 +407,29 @@ async function runSession() {
     targetDistanceMeters: TARGET_DISTANCE,
     startedUtc: new Date().toISOString(),
     durationSeconds: 0,
-    prescription: { horizontalDiopters: null, verticalDiopters: null },
+    prescription: { horizontalDiopters: null, verticalDiopters: null, cycloDegrees: null },
     results: [],
     notes: [],
     events: [],
+    interpretation: [],
   };
   const startedAt = performance.now();
   const logEvent = message => record.events.push(`${new Date().toISOString()} ${message}`);
 
   const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+  // Pacing: a patient who finds a comparison hard gets LONGER looks, never pressure. Fusion
+  // can take a while to settle on each option, so the answer window grows whenever a full
+  // pass gets no selection or an answer only lands at the very end of the window. It never
+  // shrinks and carries across trials and axes - slow fusion early means slow fusion later.
+  let answerWindowMs = ANSWER_WINDOW_MS;
+  function extendAnswerWindow() {
+    const extended = Math.min(answerWindowMs * 1.5, ANSWER_WINDOW_MAX_MS);
+    if (extended > answerWindowMs) {
+      answerWindowMs = extended;
+      logEvent(`answer window extended to ${Math.round(answerWindowMs)}ms`);
+    }
+  }
 
   async function say(clipId) {
     state.speaking = true;
@@ -337,12 +452,21 @@ async function runSession() {
   }
 
   // Tilted-head time simply doesn't count: nothing is presented until the head is level again.
+  // The patient is TOLD why the exam paused - the red bubble alone is easy to miss. A short
+  // grace period absorbs momentary wobbles, then a calm spoken reminder plays straight away
+  // and repeats every 15 seconds (longer than the clip - speak() restarts the shared Audio
+  // element, so a shorter interval would cut the sentence off) until the head is level.
   async function waitUntilLevel() {
-    let lastNudge = 0;
+    if (state.level) return;
+    logEvent('paused: waiting for level head');
+    await sleep(1500);
+    let lastNudge = -Infinity;
     while (!state.level) {
-      if (performance.now() - lastNudge > 8000) {
+      if (performance.now() - lastNudge > 15000) {
         lastNudge = performance.now();
-        speak('level_head'); // fire-and-forget; selects are already ignored while tilted
+        // Direction re-read on every repeat in case the patient overcorrected past level.
+        // Positive roll = right side raised = tilted towards the left shoulder.
+        speak(state.rollDeg > 0 ? 'level_head_left' : 'level_head_right'); // fire-and-forget; selects are already ignored while tilted
       }
       await sleep(100);
     }
@@ -352,27 +476,41 @@ async function runSession() {
   // (candidate prism applied + label + voice), each followed by a silent answer window; the
   // patient selects while their preferred view is showing. Two full rounds with no selection
   // = "no preference" - a finding meaning the options look alike, never an error.
-  async function betterWithOneOrTwo(axis, option1, option2) {
+  async function betterWithOneOrTwo(applyCandidate, option1, option2) {
     for (let round = 0; round < 2; round++) {
+      if (round === 1) {
+        // No choice on the first pass usually means the view hasn't settled yet, not a
+        // missed cue: reassure, and give both options a longer look the second time round.
+        extendAnswerWindow();
+        setChoiceLabel(null);
+        await waitUntilLevel();
+        await say('take_your_time');
+      }
       for (const [which, value, clip] of [[1, option1, 'one'], [2, option2, 'two']]) {
         await waitUntilLevel();
         setChoiceLabel(which);
-        state.prism[axis] = value;
+        applyCandidate(value);
         await say(clip);
-        const response = await waitForSelect(ANSWER_WINDOW_MS);
-        if (response.confirmed) { setChoiceLabel(null); return which; }
+        const response = await waitForSelect(answerWindowMs);
+        if (response.confirmed) {
+          if (response.ms > answerWindowMs * 0.75) extendAnswerWindow(); // answered, but only just in time
+          setChoiceLabel(null);
+          return which;
+        }
       }
     }
     setChoiceLabel(null);
     return null;
   }
 
-  // Bracketing staircase on one axis, the phoropter way: compare value-step vs value+step,
+  // Bracketing staircase on one quantity, the phoropter way: compare value-step vs value+step,
   // move to whichever the patient prefers, halve the step whenever the preferred direction
-  // reverses (or when they can't tell the options apart), finish at quarter-diopter precision.
-  // The other axis's already-found value stays applied throughout, like a doctor leaving the
-  // horizontal Risley prism in place while refining vertical.
-  async function measureAxis(axis, label, startStep, maxDiopters, introClip) {
+  // reverses (or when they can't tell the options apart), finish at minStep precision.
+  // applyCandidate maps a signed value onto the stimulus (prism diopters onto an eye-camera
+  // shift, or torsion degrees onto the right eye's line); everything already found stays
+  // applied throughout, like a doctor leaving the horizontal Risley prism in place while
+  // refining vertical.
+  async function measureStaircase({ label, introClip, applyCandidate, format, startStep, minStep, maxValue }) {
     const result = { activityId: `${label}_forced_choice`, summary: '', measurements: [] };
     await say(introClip);
 
@@ -382,21 +520,23 @@ async function runSession() {
     let trials = 0;
     let answered = 0;
 
-    while (step >= 0.25 && trials < 14) {
+    while (step >= minStep && trials < 14) {
       trials++;
-      const option1 = THREE.MathUtils.clamp(value - step, -maxDiopters, maxDiopters);
-      const option2 = THREE.MathUtils.clamp(value + step, -maxDiopters, maxDiopters);
-      const choice = await betterWithOneOrTwo(axis, option1, option2);
+      const option1 = THREE.MathUtils.clamp(value - step, -maxValue, maxValue);
+      const option2 = THREE.MathUtils.clamp(value + step, -maxValue, maxValue);
+      const choice = await betterWithOneOrTwo(applyCandidate, option1, option2);
 
       if (choice === null) {
-        result.measurements.push(`trial ${trials}: no preference between ${option1.toFixed(2)}Δ and ${option2.toFixed(2)}Δ`);
+        result.measurements.push(`trial ${trials}: no preference between ${format(option1)} and ${format(option2)}`);
         step /= 2;
+        await say('no_preference_ok'); // looking alike is a finding, not a failure - tell them so
         continue;
       }
 
       answered++;
+      if (answered % 3 === 0) await say('doing_great');
       const chosen = choice === 1 ? option1 : option2;
-      result.measurements.push(`trial ${trials}: preferred ${choice} (${chosen.toFixed(2)}Δ over ${(choice === 1 ? option2 : option1).toFixed(2)}Δ)`);
+      result.measurements.push(`trial ${trials}: preferred ${choice} (${format(chosen)} over ${format(choice === 1 ? option2 : option1)})`);
       const direction = Math.sign(chosen - value);
       if (lastDirection !== 0 && direction !== 0 && direction !== lastDirection) {
         step /= 2; // reversal: we've bracketed the answer, refine
@@ -405,25 +545,47 @@ async function runSession() {
       value = chosen;
     }
 
-    state.prism[axis] = value; // leave the found correction in place for the next axis
+    applyCandidate(value); // leave the found correction in place for the next stage
     if (trials >= 14) record.notes.push(`${label}: stopped at trial cap`);
     result.summary = answered > 0
-      ? `${label}: ${value.toFixed(2)}Δ after ${trials} comparisons`
+      ? `${label}: ${format(value)} after ${trials} comparisons`
       : `${label}: no preference at any step - none needed`;
     record.results.push(result);
     logEvent(result.summary);
     return answered > 0 ? value : 0;
   }
 
+  const prism = v => `${v.toFixed(2)}Δ`;
+  const degrees = v => `${v.toFixed(2)}°`;
+
   // --- the exam.
   try {
     await say('welcome');
     chart.visible = true;
 
-    record.prescription.horizontalDiopters =
-      await measureAxis('h', 'horizontal', 4, 10, 'horizontal_intro');
-    record.prescription.verticalDiopters =
-      await measureAxis('v', 'vertical', 2, 6, 'vertical_intro');
+    record.prescription.horizontalDiopters = await measureStaircase({
+      label: 'horizontal', introClip: 'horizontal_intro', format: prism,
+      applyCandidate: v => { state.prism.h = v; }, startStep: 4, minStep: 0.25, maxValue: 10,
+    });
+    record.prescription.verticalDiopters = await measureStaircase({
+      label: 'vertical', introClip: 'vertical_intro', format: prism,
+      applyCandidate: v => { state.prism.v = v; }, startStep: 2, minStep: 0.25, maxValue: 6,
+    });
+
+    // Cyclotorsion runs last, with the found prism left in place - an uncorrected vertical
+    // deviation would push the two lines apart and make the parallelism judgment harder.
+    letter.visible = false;
+    cycloGroup.visible = true;
+    state.rollLimitDeg = CYCLO_ROLL_LIMIT_DEG;
+    record.prescription.cycloDegrees = await measureStaircase({
+      label: 'cyclotorsion', introClip: 'cyclo_intro', format: degrees,
+      applyCandidate: applyCycloCandidate, startStep: 4, minStep: 0.5, maxValue: 10,
+    });
+    state.rollLimitDeg = ROLL_LIMIT_DEG;
+    cycloGroup.visible = false;
+    if (Math.abs(record.prescription.cycloDegrees) >= 0.5) {
+      record.notes.push('cyclotorsion found - prism cannot correct rotation; needs professional review');
+    }
 
     chart.visible = false;
     await say('all_done');
@@ -431,9 +593,11 @@ async function runSession() {
     logEvent(`session ended early: ${e.message}`);
   } finally {
     record.durationSeconds = (performance.now() - startedAt) / 1000;
+    record.interpretation = interpretFindings(record.prescription);
     saveRecord(record);
     state.prism.h = 0;
     state.prism.v = 0;
+    state.rollLimitDeg = ROLL_LIMIT_DEG;
     session.removeEventListener('select', onSelect);
     try { await session.end(); } catch { /* already ended */ }
     renderer.setAnimationLoop(null);

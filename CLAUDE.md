@@ -10,7 +10,8 @@ training. This app *estimates* that prescription the way an eye doctor does: the
 at a letter **H** with both eyes while the app alternates two candidate prism settings —
 "one… two…" — and the patient picks whichever looks more single and comfortable. A bracketing
 staircase (halve the step on every preference reversal) converges to quarter-diopter precision,
-horizontal axis first, then vertical with the found horizontal correction left in place.
+horizontal axis first, then vertical with the found horizontal correction left in place, then a
+dissociated two-line cyclotorsion screen (double-Maddox-rod analog) with the full prism in place.
 
 The result is reported in exactly the per-eye convention Vision Home's start-page prism fields
 accept (horizontal: Δ base out each eye; vertical: Δ right eye base down / left base up), so a
@@ -57,9 +58,19 @@ Vision Home):
   computes head roll from the XR camera pose every frame; beyond `ROLL_LIMIT_DEG` the
   camera-fixed bubble level turns red, selects are ignored, and the routine waits (with a
   spoken nudge) before presenting anything. Tilted time must never advance the exam.
-- **Both eyes see the H** — this is a binocular singleness/comfort comparison, not a
-  dissociated test. If a dissociated activity is ever added, note that three.js's WebXRManager
-  renders layer 1 to the left eye only and layer 2 to the right eye only.
+- **Both eyes see the H** during the prism stages — a binocular singleness/comfort comparison.
+  The **cyclotorsion stage is the one deliberately dissociated activity**: each eye sees its
+  own line via three.js layers (WebXRManager renders layer 1 to the left eye only, layer 2 to
+  the right eye only); the staircase rotates the right eye's line (positive = right eye
+  excyclo). The roll gate tightens to `CYCLO_ROLL_LIMIT_DEG` for this stage and must be
+  restored afterwards (including in the `finally`). Torsion is **report-only**: no prism
+  corrects rotation and Vision Home has no field for it.
+- **Never rush the patient**: the answer window grows (never shrinks) when a pass gets no
+  selection or an answer lands late, and reassurance clips play before re-showing a pair and
+  after no-preference trials. Pauses (head tilt) are announced out loud, not just shown.
+- **`interpretFindings` is educational, never diagnostic.** Pattern notes combine the measured
+  numbers ("consistent with a superior oblique weakness…") and must keep hedged wording plus
+  the see-a-professional framing; never assert a diagnosis.
 - Letters ("H", "1", "2") are drawn with `CanvasTexture` — no font assets; keep it that way.
 
 ## Workflow
